@@ -5,13 +5,25 @@ import { World } from "@/lib/game/World";
 import { Projectile } from "@/lib/game/Projectile";
 import { ParticleSystem } from "@/lib/game/ParticleSystem";
 
+import { Port } from "@/lib/game/Port";
+
 interface GameCanvasProps {
   onScoreChange: (score: number) => void;
   onHealthChange: (health: number) => void;
   onGoldChange: (gold: number) => void;
+  onCargoChange: (cargo: { [key: string]: number }) => void;
+  onNearPort: (port: Port | null) => void;
+  goldAmount: number;
 }
 
-export const GameCanvas = ({ onScoreChange, onHealthChange, onGoldChange }: GameCanvasProps) => {
+export const GameCanvas = ({ 
+  onScoreChange, 
+  onHealthChange, 
+  onGoldChange, 
+  onCargoChange,
+  onNearPort,
+  goldAmount
+}: GameCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPaused, setIsPaused] = useState(false);
   
@@ -27,16 +39,17 @@ export const GameCanvas = ({ onScoreChange, onHealthChange, onGoldChange }: Game
     canvas.height = window.innerHeight;
 
     // Game state
-    const world = new World(canvas.width * 2, canvas.height * 2);
-    const player = new Ship(canvas.width / 2, canvas.height / 2, true);
+    const world = new World(canvas.width * 4, canvas.height * 4);
+    const player = new Ship(canvas.width * 2, canvas.height * 2, true);
     const enemies: Enemy[] = [];
     const projectiles: Projectile[] = [];
     const particles = new ParticleSystem();
     
     let score = 0;
-    let gold = 0;
+    let cargo: { [key: string]: number } = {};
     let lastEnemySpawn = 0;
     const enemySpawnInterval = 5000;
+    const tradingRange = 120;
 
     // Camera
     let cameraX = player.x - canvas.width / 2;
@@ -53,6 +66,15 @@ export const GameCanvas = ({ onScoreChange, onHealthChange, onGoldChange }: Game
         player.fireCannons(projectiles, particles);
       }
       
+      if (e.key === "Control") {
+        e.preventDefault();
+        if (e.location === KeyboardEvent.DOM_KEY_LOCATION_LEFT) {
+          player.fireLeftCannons(projectiles, particles);
+        } else if (e.location === KeyboardEvent.DOM_KEY_LOCATION_RIGHT) {
+          player.fireRightCannons(projectiles, particles);
+        }
+      }
+      
       if (e.key.toLowerCase() === "p") {
         setIsPaused(prev => !prev);
       }
@@ -65,14 +87,24 @@ export const GameCanvas = ({ onScoreChange, onHealthChange, onGoldChange }: Game
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
-    // Spawn initial enemies
+    // Spawn initial enemies away from ports
     for (let i = 0; i < 3; i++) {
-      const angle = (Math.PI * 2 * i) / 3;
-      const distance = 400;
-      enemies.push(new Enemy(
-        player.x + Math.cos(angle) * distance,
-        player.y + Math.sin(angle) * distance
-      ));
+      let attempts = 0;
+      let spawned = false;
+      
+      while (!spawned && attempts < 10) {
+        const angle = (Math.PI * 2 * i) / 3 + (Math.random() - 0.5) * 0.5;
+        const distance = 500 + Math.random() * 200;
+        const x = player.x + Math.cos(angle) * distance;
+        const y = player.y + Math.sin(angle) * distance;
+        
+        // Check if far from ports
+        if (!world.isNearPort(x, y, 300)) {
+          enemies.push(new Enemy(x, y));
+          spawned = true;
+        }
+        attempts++;
+      }
     }
 
     // Game loop
@@ -99,9 +131,9 @@ export const GameCanvas = ({ onScoreChange, onHealthChange, onGoldChange }: Game
           if (enemy.health <= 0) {
             enemies.splice(index, 1);
             score += 100;
-            gold += 50;
+            const newGold = goldAmount + 50;
             onScoreChange(score);
-            onGoldChange(gold);
+            onGoldChange(newGold);
             particles.createExplosion(enemy.x, enemy.y);
           }
         });
@@ -134,16 +166,37 @@ export const GameCanvas = ({ onScoreChange, onHealthChange, onGoldChange }: Game
           }
         });
 
-        // Spawn new enemies
+        // Spawn new enemies away from ports
         if (currentTime - lastEnemySpawn > enemySpawnInterval && enemies.length < 8) {
-          const angle = Math.random() * Math.PI * 2;
-          const distance = 600;
-          enemies.push(new Enemy(
-            player.x + Math.cos(angle) * distance,
-            player.y + Math.sin(angle) * distance
-          ));
-          lastEnemySpawn = currentTime;
+          let attempts = 0;
+          let spawned = false;
+          
+          while (!spawned && attempts < 20) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 600 + Math.random() * 200;
+            const x = player.x + Math.cos(angle) * distance;
+            const y = player.y + Math.sin(angle) * distance;
+            
+            // Check if far from ports
+            if (!world.isNearPort(x, y, 300)) {
+              enemies.push(new Enemy(x, y));
+              spawned = true;
+              lastEnemySpawn = currentTime;
+            }
+            attempts++;
+          }
+          
+          if (!spawned) {
+            lastEnemySpawn = currentTime; // Try again next interval
+          }
         }
+
+        // Check for nearby port
+        const nearPort = world.findNearestPort(player.x, player.y, tradingRange);
+        onNearPort(nearPort);
+
+        // Update cargo callback
+        onCargoChange(cargo);
 
         // Update camera (smooth follow)
         cameraX += (player.x - canvas.width / 2 - cameraX) * 0.1;
@@ -194,7 +247,7 @@ export const GameCanvas = ({ onScoreChange, onHealthChange, onGoldChange }: Game
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [isPaused, onScoreChange, onHealthChange, onGoldChange]);
+  }, [isPaused, onScoreChange, onHealthChange, onGoldChange, onCargoChange, onNearPort, goldAmount]);
 
   return (
     <canvas

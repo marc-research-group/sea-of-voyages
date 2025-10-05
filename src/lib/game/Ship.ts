@@ -72,20 +72,35 @@ export class Ship {
     if (this.cannonCooldown > 0) return;
 
     // Fire from both sides
+    this.fireLeftCannons(projectiles, particles);
+    this.fireRightCannons(projectiles, particles);
+
+    this.cannonCooldown = this.cannonCooldownTime;
+  }
+
+  fireLeftCannons(projectiles: Projectile[], particles: ParticleSystem) {
+    if (this.cannonCooldown > 0) return;
+
     const leftAngle = this.angle - Math.PI / 2;
+    const offset = 20;
+
+    const leftX = this.x + Math.cos(leftAngle) * offset;
+    const leftY = this.y + Math.sin(leftAngle) * offset;
+    projectiles.push(new Projectile(leftX, leftY, leftAngle, this.isPlayer));
+    particles.createCannonFire(leftX, leftY, leftAngle);
+
+    this.cannonCooldown = this.cannonCooldownTime;
+  }
+
+  fireRightCannons(projectiles: Projectile[], particles: ParticleSystem) {
+    if (this.cannonCooldown > 0) return;
+
     const rightAngle = this.angle + Math.PI / 2;
     const offset = 20;
 
-    // Left side cannons
-    const leftX = this.x + Math.cos(leftAngle) * offset;
-    const leftY = this.y + Math.sin(leftAngle) * offset;
-    projectiles.push(new Projectile(leftX, leftY, leftAngle, true));
-    particles.createCannonFire(leftX, leftY, leftAngle);
-
-    // Right side cannons
     const rightX = this.x + Math.cos(rightAngle) * offset;
     const rightY = this.y + Math.sin(rightAngle) * offset;
-    projectiles.push(new Projectile(rightX, rightY, rightAngle, true));
+    projectiles.push(new Projectile(rightX, rightY, rightAngle, this.isPlayer));
     particles.createCannonFire(rightX, rightY, rightAngle);
 
     this.cannonCooldown = this.cannonCooldownTime;
